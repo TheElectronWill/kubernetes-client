@@ -18,6 +18,7 @@ class KubernetesClient[F[_]: Async: Logger](httpClient: Client[F], wsClient: WSC
     wsClient,
     config
   )
+  lazy val nodes                     = new NodesApi(httpClient, config)
   lazy val jobs                      = new JobsApi(httpClient, config)
   lazy val cronJobs                  = new CronJobsApi(httpClient, config)
   lazy val deployments               = new DeploymentsApi(httpClient, config)
