@@ -3,10 +3,12 @@ package com.goyeau.kubernetes.client
 import java.io.File
 import cats.ApplicativeThrow
 import cats.effect.Sync
+import cats.implicits._
 import com.goyeau.kubernetes.client.util.Yamls
 import org.typelevel.log4cats.Logger
-import org.http4s.Uri
+import org.http4s._
 import org.http4s.headers.Authorization
+import scala.io.Source
 
 case class KubeConfig private (
     server: Uri,
@@ -31,6 +33,31 @@ object KubeConfig {
     fromFile(kubeconfig, contextName)
   def fromFile[F[_]: Sync: Logger](kubeconfig: File, contextName: String): F[KubeConfig] =
     Yamls.fromKubeConfigFile(kubeconfig, Option(contextName))
+
+  def inCluster[F[_]: Sync: Logger](): F[KubeConfig] = {
+    val serviceAccount = "/var/run/secrets/kubernetes.io/serviceaccount"
+    val caCertPath = s"$serviceAccount/ca.crt"
+    val tokenPath = s"$serviceAccount/token"
+    for {
+      serviceHost <- sys.env.get("KUBERNETES_SERVICE_HOST")
+        .liftTo[F](new IllegalStateException("Can't find environment variable KUBERNETES_SERVICE_HOST"))
+      servicePort <- sys.env.get("KUBERNETES_SERVICE_PORT")
+        .liftTo[F](new IllegalStateException("Can't find environment variable KUBERNETES_SERVICE_PORT"))
+
+      server <- Sync[F].fromEither(Uri.fromString(s"https://$serviceHost:$servicePort"))
+      tokenContent <- Sync[F].blocking(Source.fromFile(tokenPath).mkString)
+    } yield new KubeConfig(
+      server,
+      Some(Authorization(Credentials.Token(AuthScheme.Bearer, tokenContent))),
+      None,
+      Some(new File(caCertPath)),
+      None,
+      None,
+      None,
+      None,
+      None
+    )
+  }
 
   def of[F[_]: ApplicativeThrow](
       server: Uri,
